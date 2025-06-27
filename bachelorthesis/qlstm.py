@@ -9,16 +9,15 @@
 #pip.main(["install", "matplotlib"])
 #pip.main(["install", "seaborn"])
 
-import yfinance as yf
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import StandardScaler
 import tensorflow as tf
 from tensorflow.keras.layers import Input, LSTM, Dense, Dropout
 import matplotlib.pyplot as plt
 import seaborn as sns
 from tensorflow.keras.models import Model
 from tensorflow.keras import backend as K
+from .data_preparation import DataPreparation
 
 
 
@@ -29,9 +28,11 @@ class qlstm:
         self.ticker = ticker
         self.start_date = start_date
         self.end_date = end_date
+        
+        # Initialize data preparation
+        self.data_prep = DataPreparation(ticker, start_date, end_date)
 
         # Data Preparation
-        self.scaler = StandardScaler() 
         self.daily_returns_scaled = None
         self.daily_prices = None
         self.daily_returns = None
@@ -81,88 +82,43 @@ class qlstm:
 
     # Function for creating sequential input data
     def create_lstm_data(self, data_set_scaled,num_features ,time_steps=1):
-        X = []
-
-        for j in range(num_features):
-            X.append([])
-            for i in range(time_steps, data_set_scaled.shape[0]):
-                X[j].append(data_set_scaled[i-time_steps:i, j])
-
-        X=np.moveaxis(X, [0], [2])
-
-        X, yi =np.array(X), np.array(data_set_scaled[time_steps:,0])
-        y=np.reshape(yi,(len(yi),1))
-
-        return X, y
+        # Use data preparation class method
+        return self.data_prep.create_lstm_sequences(data_set_scaled, num_features, time_steps)
         
     # Define quantile loss function
     def q_loss(self, q, y, f):
         e = (y - f)
-        return K.mean(K.maximum(q * e, (q - 1) * e), axis=-1)
-
-    # Function for downloading the data if only the daily returns are used as a feature:
+        return K.mean(K.maximum(q * e, (q - 1) * e), axis=-1)    # Function for downloading the data if only the daily returns are used as a feature:
     def read_data_return(self):
-        # Get data from Yahoo Finance
-        data = yf.download(self.ticker, start=self.start_date, end=self.end_date)
-
-        # Extract closing prices 
-        self.daily_prices = data["Close"]
-
-        # Calculate the daily return of the stock
-        self.daily_returns = (self.daily_prices / self.daily_prices.shift(1)) - 1
-        self.daily_returns = self.daily_returns.dropna()
-
-        df = pd.DataFrame({
-            "Returns": self.daily_returns
-        })
-        self.feature_count = len(df.axes[1])
-
-        # Scale the data
-        scaled_df = self.scaler.fit_transform(df)
+        # Use data preparation class
+        self.data_prep.download_data()
+        self.data_prep.calculate_returns()
+        
+        # Get processed data using data preparation class
+        scaled_df, self.feature_count, self.train_size, self.val_size, self.test_size = self.data_prep.prepare_data_for_qlstm(['returns'])
         
         # Create sequential data for the QLSTM
-        self.x, self.y = self.create_lstm_data(data_set_scaled = scaled_df,time_steps = self.time_steps, num_features = self.feature_count)
+        self.x, self.y = self.data_prep.create_lstm_sequences(scaled_df, self.feature_count, self.time_steps)
 
-        # Split the data into training, validation, and test sets
-        total_size = len(self.x)
-        self.train_size = int(total_size * 0.6)
-        self.val_size = int(total_size * 0.2)
-        self.test_size = total_size - self.train_size - self.val_size 
-
-    # Function for downloading the data if the daily returns and the daily trading volume are used as features:
+        # Update other attributes for compatibility
+        self.daily_prices = self.data_prep.daily_prices
+        self.daily_returns = self.data_prep.daily_returns     # Function for downloading the data if the daily returns and the daily trading volume are used as features:
     def read_data_return_vol(self):
-        # Get data from Yahoo Finance
-        data = yf.download(self.ticker, start=self.start_date, end=self.end_date)
-        # Extract closing prices and volume
-        self.daily_prices = data["Close"]
-        self.volume = data["Volume"]
-
-        # Calculate the daily return of the stock
-        self.daily_returns = (self.daily_prices / self.daily_prices.shift(1)) - 1
-        self.daily_returns = self.daily_returns.dropna()
-
-        # Align volume data with the daily_returns
-        self.volume = self.volume[self.daily_returns.index]
+        # Use data preparation class
+        self.data_prep.download_data()
+        self.data_prep.calculate_returns()
         
-        self.daily_returns_sqr = self.daily_returns**2
-
-        df = pd.DataFrame({
-            "Returns": self.daily_returns,
-            "Volume": self.volume[self.daily_returns.index]  # Gleiche Indizes
-        })
-        self.feature_count = len(df.axes[1])
-
-        # Scale the data
-        scaled_df = self.scaler.fit_transform(df)
+        # Get processed data using data preparation class with returns and volume
+        scaled_df, self.feature_count, self.train_size, self.val_size, self.test_size = self.data_prep.prepare_data_for_qlstm(['returns', 'volume'])
         
         # Create sequential data for the QLSTM
-        self.x, self.y = self.create_lstm_data(data_set_scaled = scaled_df,time_steps = self.time_steps, num_features = self.feature_count)
+        self.x, self.y = self.data_prep.create_lstm_sequences(scaled_df, self.feature_count, self.time_steps)
 
-        # Split the data into training, validation, and test sets
-        total_size = len(self.x)
-        self.train_size = int(total_size * 0.6)
-        self.val_size = int(total_size * 0.2)
-        self.test_size = total_size - self.train_size - self.val_size 
+        # Update other attributes for compatibility
+        self.daily_prices = self.data_prep.daily_prices
+        self.daily_returns = self.data_prep.daily_returns
+        self.volume = self.data_prep.volume
+        self.daily_returns_sqr = self.data_prep.daily_returns_sqr
 
     # The three model configurations that are tested:
     def lstm_model_complex(self, input_shape):
@@ -322,29 +278,32 @@ class qlstm:
             "LSTM PINAW": pinaw,
             "LSTM PICP": picp,
         }
- 
+    
     # Function for plotting the results 
     def graph(self):
-
+        
         self.pred_inv = [
-        self.scaler.inverse_transform(self.combined_predictions[0].reshape(-1, 1)),
-        self.scaler.inverse_transform(self.combined_predictions[1].reshape(-1, 1))
-        ]
-       
-        self.y_test_inv = self.daily_returns[self.train_size + self.val_size:self.train_size + self.val_size + self.number_of_steps*self.window]
+            self.data_prep.inverse_transform_predictions(self.combined_predictions[0]).flatten(),
+            self.data_prep.inverse_transform_predictions(self.combined_predictions[1]).flatten()        ]
+        # Get the actual length of predictions
+        pred_length = len(self.combined_predictions[0])
+        self.y_test_inv = self.daily_returns.iloc[self.train_size + self.val_size:self.train_size + self.val_size + pred_length]
         
-        self.daily_dates = self.daily_returns.index[self.train_size + self.val_size:self.train_size + self.val_size + self.number_of_steps*self.window]
+        self.daily_dates = self.data_prep.get_date_index_for_period(self.train_size + self.val_size, self.train_size + self.val_size + pred_length)
         
+        # Ensure all arrays have the same length
+        min_length = min(len(self.daily_dates), len(self.y_test_inv), len(self.pred_inv[0]))
+        self.daily_dates = self.daily_dates[:min_length]
+        self.y_test_inv = self.y_test_inv[:min_length]
+        pred_0 = self.pred_inv[0][:min_length].flatten()
+        pred_1 = self.pred_inv[1][:min_length].flatten()
 
         plt.figure(figsize=(14, 5))
         plt.plot(self.daily_dates, self.y_test_inv, label="Actual Daily Return ", color="black")
-        plt.plot(self.daily_dates, self.pred_inv[0], label=f"Predicted Return (Quantile {round(((1-self.confidence)/2)*100,0)}%)", linestyle="dotted", color = "purple")
-        plt.plot(self.daily_dates, self.pred_inv[1], label=f"Predicted Return (Quantile {(self.confidence +((1-self.confidence)/2))*100}%)", linestyle="dotted", color = "green")
+        plt.plot(self.daily_dates, pred_0, label=f"Predicted Return (Quantile {round(((1-self.confidence)/2)*100,0)}%)", linestyle="dotted", color = "purple")
+        plt.plot(self.daily_dates, pred_1, label=f"Predicted Return (Quantile {(self.confidence +((1-self.confidence)/2))*100}%)", linestyle="dotted", color = "green")
 
-        y1 = self.pred_inv[0].ravel()  
-        y2 = self.pred_inv[1].ravel()  
-
-        plt.fill_between(self.daily_dates, y1, y2, where=(y2 >= y1), color="red", alpha=0.3)
+        plt.fill_between(self.daily_dates, pred_0, pred_1, where=(pred_1 >= pred_0), color="red", alpha=0.3)
 
         plt.xlabel("Date")
         plt.ylabel("Daily Return")

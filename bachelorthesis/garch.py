@@ -5,7 +5,6 @@
 #pip.main(["install", "arch"])
 
 
-import yfinance as yf
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -14,6 +13,7 @@ from arch import arch_model
 from scipy.stats import norm, kurtosis
 from arch.unitroot import ADF
 from statsmodels.stats.diagnostic import acorr_ljungbox
+from .data_preparation import DataPreparation
 
 class garch():
     def __init__ (self,ticker,start_date,end_date):
@@ -22,6 +22,9 @@ class garch():
         self.ticker = ticker
         self.start_date = start_date
         self.end_date = end_date
+        
+        # Initialize data preparation
+        self.data_prep = DataPreparation(ticker, start_date, end_date)
 
         # Data Preparation
         self.daily_prices = None
@@ -51,22 +54,18 @@ class garch():
         self.eta = 30 #Weighting factor for penalization in the CWC
 
     def read_data(self):
-        # Get data from Yahoo Finance
-        data = yf.download(self.ticker, start=self.start_date, end=self.end_date)
-
-        # Extract closing prices
-        self.daily_prices = data["Close"]
-
-        # Calculate the daily return of the stock
-        self.daily_returns = (self.daily_prices / self.daily_prices.shift(1)) - 1
-        self.daily_returns = self.daily_returns.dropna()
-        self.daily_returns_scaled = self.daily_returns*100 
-        self.abs_daily_returns = self.daily_returns**2
+        # Use data preparation class
+        self.data_prep.download_data()
+        self.data_prep.calculate_returns()
+        
+        # Get processed data
+        self.daily_prices = self.data_prep.daily_prices
+        self.daily_returns = self.data_prep.daily_returns
+        self.daily_returns_scaled = self.data_prep.daily_returns_scaled
+        self.abs_daily_returns = self.data_prep.abs_daily_returns
     
         # Split the data into training and test set 
-        self.train_size = int(len(self.daily_returns) * 0.8)
-        self.train, self.test = self.daily_returns_scaled[:self.train_size], self.daily_returns_scaled[self.train_size:]
-        self.split_date = self.train.index[-1]
+        self.train, self.test, self.split_date = self.data_prep.prepare_data_for_garch()
 
     def stationarity(self):
         # Plot Daily Returns
@@ -154,11 +153,11 @@ class garch():
                 self.order_parameters += [[i,j]] 
                 model = arch_model(self.train,p=i,q=j).fit(disp=False) # (not) showing optimization process
                 self.garch_aic += [model.aic]
-
+        
         # Selecting best model according to AIC and fitting on the training set
         self.model = arch_model(self.daily_returns_scaled, p=self.order_parameters[np.argmin(self.garch_aic)][0],q=self.order_parameters[np.argmin(self.garch_aic)][1], dist = "normal")
         self.model_fit = self.model.fit(disp=False, last_obs=self.split_date)
-
+    
     def predict(self, horizon=1):
         # Computing 1-step ahead predictions
         self.forecasts = self.model_fit.forecast(horizon=horizon, start=self.split_date)
@@ -173,10 +172,14 @@ class garch():
         self.lower_bound = self.mean_forecast_decimal - norm.ppf(1-((1-self.confidence)/2)) * np.sqrt(variance_forecast) * 0.01
         self.upper_bound = self.mean_forecast_decimal + norm.ppf(1-((1-self.confidence)/2)) * np.sqrt(variance_forecast) * 0.01
     
-        # Assuring matching indices
+        # Assuring matching indices and consistent data types
         self.test_decimal = self.test_decimal.reindex(self.mean_forecast_decimal.index)
         self.lower_bound = self.lower_bound.reindex(self.mean_forecast_decimal.index)
         self.upper_bound = self.upper_bound.reindex(self.mean_forecast_decimal.index)
+        
+        # Convert test_decimal to Series if it's a DataFrame to ensure compatibility
+        if hasattr(self.test_decimal, 'shape') and len(self.test_decimal.shape) > 1:
+            self.test_decimal = self.test_decimal.iloc[:, 0]
 
     # Compute metrics
     def metrics(self):
