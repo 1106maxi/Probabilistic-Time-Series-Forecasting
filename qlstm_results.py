@@ -6,7 +6,7 @@
 # in LSTMs. Results can therfore vary with each run.                                  #
 #######################################################################################
 
-from bachelorthesis import qlstm
+from src.models.qlstm import qlstm
 import pandas as pd
 
 # Start and end dates of the three study periods

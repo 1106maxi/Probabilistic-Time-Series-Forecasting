@@ -1,5 +1,5 @@
 #Code used to produce the final results
-from bachelorthesis import garch
+from src.models.garch import garch
 import pandas as pd
 
 # Start and end dates of the three study periods

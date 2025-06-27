@@ -1,4 +1,4 @@
-from bachelorthesis import *
+from src.models import *
 
 GARCH_test = garch("NOC", start_date="2009-01-01", end_date="2012-05-02")
 GARCH_test.read_data()
