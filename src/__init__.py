@@ -1,6 +1,4 @@
 """
-Probabilistic Time Series Forecasting Package
-
 This package contains implementations of GARCH and Quantile LSTM models
 for probabilistic time series forecasting.
 """

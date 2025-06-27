@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Evaluation script for comparing GARCH and Quantile LSTM model performance.
 
