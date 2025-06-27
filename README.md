@@ -28,11 +28,12 @@ Probabilistic-Time-Series-Forecasting/
 ├── src/                  # Python code for data loading, modeling, training, and evaluation
 │   ├── data/             # Data loading and preprocessing scripts
 │   ├── models/           # Implementation of GARCH and Quantile LSTM models
-│   ├── utils/            # Utility functions, metrics, etc.
 │   ├── train.py          # Training entry script
-│   └── evaluate.py       # Evaluation and result generation
+│   ├── evaluate.py       # Evaluation and result generation
+│   └── hyperparameter_tuning.py  # Hyperparameter optimization
 │
-├── notebooks/            # Jupyter notebooks for experiment demos and analysis
+├── notebooks/            # Jupyter notebooks for analysis and experimentation
+│   └── garch_analysis.ipynb  # GARCH diagnostic analysis and visualizations
 │
 ├── Graphics/             # Project figures and result plots
 │   └── LSTM_v2.png       # LSTM cell illustration (see below)
@@ -116,7 +117,7 @@ Performance of both models is summarized using the **Coverage Width Criterion (C
 - **Quantile LSTM Improvements**: Incorporating trading volume as a feature improved performance but still lagged behind GARCH overall.
 
 ### Visual Example of Performance:
-Predicted intervals for stock returns (Northrop Grumman, Period 1):
+Predicted intervals of the QLSTM model for stock returns (Northrop Grumman, Period 1):
 
 ![Prediction Intervals](Graphics/LSTM_res_NOC.png)
 
