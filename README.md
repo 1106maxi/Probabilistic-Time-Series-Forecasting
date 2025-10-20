@@ -18,9 +18,7 @@ The goal is to evaluate and compare their ability to produce reliable and inform
 
 ---
 
-## Suggested Repository Structure
-
-A clean and reproducible structure is recommended:
+## Repository Structure
 
 ```
 Probabilistic-Time-Series-Forecasting/
